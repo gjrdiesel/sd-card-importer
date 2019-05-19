@@ -10,8 +10,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "cp-file": "^7.0.0",
     "exiftool": "0.0.3",
     "glob": "^7.1.4",
-    "node-exiftool": "^2.3.0"
+    "node-exiftool": "^2.3.0",
+    "simple-exiftool": "^1.1.0"
   }
 }

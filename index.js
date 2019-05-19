@@ -1,53 +1,51 @@
 const { exec } = require('child_process');
 const env = require("./env");
 const glob = require("glob");
-
-const exiftool = require('node-exiftool')
-const ep = new exiftool.ExiftoolProcess()
-
-const fs = require('fs');
+const Exif = require("simple-exiftool");
 const path = require('path');
-
 const EventEmitter = require('events');
+const cpFile = require('cp-file');
+
 const Queue = new EventEmitter();
-Queue.count = 0;
-Queue.files = [];
 
-Queue.on('add', details => {
-    Queue.count += 1;
-    Queue.files.push(details);
+async function buildList(err, meta) {
 
-    console.log(`${Queue.count} / ${Queue.length} )`, details);
+    let list = meta.map(meta => {
 
-    if (Queue.count == Queue.length) {
-        Queue.emit('finished');
-    }
-});
+        // // console.log(meta);
+        // process.exit();
+        // return;
+        let date, model;
 
-Queue.on('error', console.error);
+        // DJI = CreateDate
+        // 80D = DateTimeOriginal
+        if(meta.FileName.includes("DJI_")){
+            date = 'CreateDate';
+            model = 'DJI';
+        }
 
-async function buildPath(meta) {
-    const toDest = path.join(
-        env.import_to,
-        meta.safeDate,
-        meta.cameraModelName,
-        meta.fileType,
-        path.basename(meta.pathToFile)
-    );
-    Queue.emit("add", { toDest, fromDest: meta.pathToFile });
+        if(meta.FileName.includes("CANON")){
+            date = 'DateTimeOriginal';
+            model = meta.Model;
+        }
+
+        const safeDate = meta[date].split(" ")[0].split(":").join("-");
+
+        const args = [
+            env.import_to,
+            safeDate,
+            model,
+            meta.FileType,
+            meta.FileName
+        ];
+
+        const toDest = path.join(...args);
+
+        return { toDest, fromDest: meta.SourceFile }
+    });
+
+    Queue.emit("finished", list);
 }
-
-const getFilePart = location => new Promise((resolve, reject) => {
-    const chunks = [];
-    fs.createReadStream(location, {
-        encoding: null,
-        start: 0,
-        end: 2048 * 1024,
-    })
-        .on('data', chunk => { chunks.push(chunk); })
-        .on('end', () => { resolve(Buffer.concat(chunks)); })
-        .on('error', reject);
-});
 
 function scanDrives() {
     exec('df -h | grep : | awk "{ print $1 }"', (error, stdout, stderr) => {
@@ -63,27 +61,12 @@ function scanDrives() {
 function importDrive(driveLetter) {
     glob("**/*.+(JPG|MP4)", { cwd: `${driveLetter}:/` }, (err, files) => {
         if (!err) {
-            Queue.length = files.length;
-            files.map(file => inspectFile(`${driveLetter}:/${file}`))
+            Exif(files.map(file => `${driveLetter}:/${file}`), buildList)
         }
     });
 }
 
-async function inspectFile(file) {
-    const filePart = await getFilePart(file);
-    console.log(file);
-    // exif.metadata(filePart, function (err, metadata) {
-    //     if (err) {
-    //         console.log(err);
-    //         throw err;
-    //     }
-    //     else {
-    //         metadata.pathToFile = file;
-    //         metadata.safeDate = metadata.modifyDate.split(" ")[0].split(":").join("-");
-    //         buildPath(metadata);
-    //     }
-    // });
-}
+Queue.start = file => cpFile(file.fromDest,file.toDest,{overwrite:false}).on('progress',console.log);
 
-scanDrives()
-    .on('finished', files => console.log(files));
+const importer = scanDrives();
+importer.on('finished', files => files.forEach(importer.start));
