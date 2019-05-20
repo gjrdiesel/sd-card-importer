@@ -12,24 +12,26 @@ async function buildList(err, meta) {
 
     let list = meta.map(meta => {
 
-        // // console.log(meta);
-        // process.exit();
-        // return;
-        let date, model;
+        let model;
 
-        // DJI = CreateDate
-        // 80D = DateTimeOriginal
-        if(meta.FileName.includes("DJI_")){
-            date = 'CreateDate';
+        // Not sure what else to pull from the EXIF data to 
+        // determine if it's a DJI -- would be nice to have
+        // incase you were pull footage for multple drones.
+        if (meta.FileName.includes("DJI_")) {
             model = 'DJI';
+            // Guess it would be better if we'd let you tag folders later
         }
 
-        if(meta.FileName.includes("CANON")){
-            date = 'DateTimeOriginal';
+        if (meta.Model) {
             model = meta.Model;
         }
 
-        const safeDate = meta[date].split(" ")[0].split(":").join("-");
+        // It's going to blow up if we we aren't DJI or don't have meta.Model
+        // but that's ok for now, we'll just need to log it and send a bug report
+        
+        // TODO: Bug report
+
+        const safeDate = meta.CreateDate.split(" ")[0].split(":").join("-");
 
         const args = [
             env.import_to,
@@ -48,6 +50,7 @@ async function buildList(err, meta) {
 }
 
 function scanDrives() {
+    // Swap out for something that works with normal windows usage
     exec('df -h | grep : | awk "{ print $1 }"', (error, stdout, stderr) => {
         stdout.split("\n")
             .map(d => d.split(":")[0])
@@ -59,14 +62,16 @@ function scanDrives() {
 }
 
 function importDrive(driveLetter) {
+    // TODO: Test compatability with MacOS
     glob("**/*.+(JPG|MP4)", { cwd: `${driveLetter}:/` }, (err, files) => {
         if (!err) {
-            Exif(files.map(file => `${driveLetter}:/${file}`), buildList)
+            if (files.length > 0)
+                Exif(files.map(file => `${driveLetter}:/${file}`), buildList)
         }
     });
 }
 
-Queue.start = file => cpFile(file.fromDest,file.toDest,{overwrite:false}).on('progress',console.log);
+Queue.start = file => cpFile(file.fromDest, file.toDest, { overwrite: false }).on('progress', console.log);
 
 const importer = scanDrives();
 importer.on('finished', files => files.forEach(importer.start));
